@@ -30,7 +30,10 @@ pipeline {
                 script {
                     // Login to Docker Hub using stored credentials
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-password', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                        sh "echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin"
+                        // Use a safer way to handle credentials without Groovy string interpolation
+                        sh '''#!/bin/bash
+                            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                        '''
                     }
                     // Push the Docker image to Docker Hub
                     sh "docker push ${DOCKER_HUB_CREDENTIALS_USR}/${IMAGE_NAME}:${BUILD_NUMBER}"
@@ -43,23 +46,24 @@ pipeline {
                 script {
                     // Authenticate with Google Cloud using the service account key stored in Jenkins
                     withCredentials([file(credentialsId: 'gcp-service-account', variable: 'GOOGLE_APPLICATION_CREDENTIALS')]) {
-                         // Authenticate with service account
-                         sh "gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
+                        // Authenticate with service account
+                        sh "gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}"
+                        
                         // Set GCP project
                         sh "gcloud config set project ${PROJECT_ID}"
 
                         // Deploy the Docker image from Docker Hub to Google Cloud Run
-                        sh "gcloud run deploy ${IMAGE_NAME} \
+                        sh """gcloud run deploy ${IMAGE_NAME} \
                             --image docker.io/${DOCKER_HUB_CREDENTIALS_USR}/${IMAGE_NAME}:${BUILD_NUMBER} \
                             --platform managed \
                             --region us-central1 \
-                            --allow-unauthenticated"
+                            --allow-unauthenticated"""
                         
                         // Add IAM policy to allow public access to the Cloud Run service
-                        sh "gcloud run services add-iam-policy-binding ${IMAGE_NAME} \
+                        sh """gcloud run services add-iam-policy-binding ${IMAGE_NAME} \
                             --region us-central1 \
                             --member='allUsers' \
-                            --role='roles/run.invoker'"
+                            --role='roles/run.invoker'"""
                     }
                 }
             }
@@ -74,6 +78,4 @@ pipeline {
             }
         }
     }
-
-    // No 'post' block, manual cleanup done in the final stage
 }
